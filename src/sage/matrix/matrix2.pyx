@@ -19378,7 +19378,7 @@ cdef class Matrix(Matrix1):
         col_profile = M.pivots()
         return tuple(row_profile_K), M, col_profile
     
-    def linear_interpolation_basis(self, J, degree, var_name, shift=None):
+    def linear_interpolation_basis(self, J, degree, var_name, shift=None, timer=[]):
         r"""
         Construct a linear interpolant basis for (``self``,`J`) in `s`-Popov form.
 
@@ -19393,9 +19393,17 @@ cdef class Matrix(Matrix1):
         - Matrix whose rows form an interpolation basis.
 
         """
+        import time
         from sage.combinat.permutation import Permutation
         from sage.matrix.constructor import matrix
         from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
+        
+        start_time = time.time()
+        
+        #DEBUG 0
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
         
         poly_ring = PolynomialRing(self.base_ring(),var_name)
         
@@ -19404,6 +19412,11 @@ cdef class Matrix(Matrix1):
         # if no shift, this is equivalent to 0s
         if shift is None:
             shift = [0]*self.nrows()
+        
+        #DEBUG 1
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
         
         # calculate shift priority function and permutation
         priority = lambda c,d : shift[c] + d
@@ -19419,14 +19432,34 @@ cdef class Matrix(Matrix1):
         phi = lambda c,d : priority_permutation_inv(index_inv(c,d) + 1) - 1
         phi_inv = lambda i : index(priority_permutation(i + 1) - 1)
         
+        #DEBUG 2
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
+        
         # calculate krylov profile
         row_profile, pivot, col_profile = self.krylov_rank_profile(J,degree,shift)
+        
+        #DEBUG 3
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
         
         if len(row_profile) == 0:
             return matrix.identity(poly_ring,m)
         
+        #DEBUG 4
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
+        
         # (c_k, d_k) = phi^-1 (row_i)
         c, d = zip(*(phi_inv(i) for i in row_profile))
+        
+        #DEBUG 5
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
         
         # degree_c = 0 or max d[k] such that c[k] = c
         inv_c = [None]*m
@@ -19435,6 +19468,11 @@ cdef class Matrix(Matrix1):
             if d[k] >= degree_c[c[k]]:
                 degree_c[c[k]] = d[k] + 1
                 inv_c[c[k]] = k
+        
+        #DEBUG 6
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
         
         T_absent_indices = [i for i in range(m) if inv_c[i] is None]
         T_present_indices = [inv_c[i] for i in range(m) if inv_c[i] is not None]
@@ -19454,23 +19492,54 @@ cdef class Matrix(Matrix1):
         C = pivot.matrix_from_columns(col_profile)
         D = matrix(D_rows)
         
+        #DEBUG 7
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
+        
         relation = D*C.inverse()
         
+        #DEBUG 8
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
+        
         # linear interpolation basis in shifted Popov form
-        uncompressed_basis = matrix.block([[-relation,matrix.identity(m)]],subdivide=False)
+        #uncompressed_basis = matrix.block([[-relation,matrix.identity(m)]],subdivide=False)
         
         # construct variable
         variable = poly_ring.gen()
         
+        basis_rows = [[[] for j in range(m)] for i in range(m)]
+        
         # compression of basis into polynomial form
-        basis_rows = [[0]*m for i in range(m)]
+        for i in range(m):
+            basis_rows[i][i] = [0]*degree_c[i] + [1]
+        
+        #DEBUG 9
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
+        
         for col in range(relation.ncols()):
             for row in range(m):
-                basis_rows[row][c[col]] += uncompressed_basis[row][col] * variable**d[col]
-        for i in range(m):
-            basis_rows[i][i] += variable**degree_c[i]
+                if len(basis_rows[row][c[col]]) <= d[col]:
+                    basis_rows[row][c[col]] += [0]*(d[col]+1-len(basis_rows[row][c[col]]))
+                basis_rows[row][c[col]][d[col]] -= relation[row][col]
         
-        return matrix(basis_rows)
+        #DEBUG 10
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
+        
+        output = matrix(poly_ring, basis_rows)
+        
+        #DEBUG 11
+        time_time = time.time()
+        timer.append(time_time - start_time)
+        #DEBUG
+        
+        return output
     
     # a limited number of access-only properties are provided for matrices
     @property
